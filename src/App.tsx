@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLiveAPI } from './lib/useLiveAPI';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mic, MicOff, AlertCircle, Sparkles, Send, MessageSquare, AudioLines, History, Settings, X, Trash2 } from 'lucide-react';
+import { Mic, MicOff, AlertCircle, Sparkles, Send, MessageSquare, AudioLines, History, Settings, X, Trash2, LogOut, Mail } from 'lucide-react';
+import { useAuth } from './components/AuthContext';
+import AuthScreen from './components/AuthScreen';
 
 const VOICES = [
   { id: 'Aoede', label: 'Aoede (Warm, clear female)' },
@@ -13,7 +15,9 @@ const VOICES = [
 ];
 
 export default function App() {
+  const { user, loading: authLoading, logout, resendVerification } = useAuth();
   const [activeMode, setActiveMode] = useState<'voice' | 'chat'>('voice');
+
   const [userMemory, setUserMemory] = useState<string[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -38,6 +42,9 @@ export default function App() {
   const [isThinking, setIsThinking] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  const [verificationSending, setVerificationSending] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
+
   // Load persistence
   useEffect(() => {
     const savedMem = localStorage.getItem('patro_memory');
@@ -60,6 +67,60 @@ export default function App() {
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [chatMessages, activeMode]);
+
+  const handleResend = async () => {
+    try {
+      setVerificationSending(true);
+      await resendVerification();
+      setVerificationSent(true);
+    } catch(err) {
+      console.error(err);
+    } finally {
+      setVerificationSending(false);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <Sparkles className="w-8 h-8 text-zinc-600 animate-pulse" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthScreen />;
+  }
+
+  // Enforce email verification (Google logins are automatically verified)
+  if (!user.emailVerified) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans selection:bg-zinc-800 text-zinc-50">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+          <Mail className="mx-auto h-12 w-12 text-zinc-400 mb-4" />
+          <h2 className="text-2xl font-medium tracking-tight text-white mb-2">Verify your email</h2>
+          <p className="text-sm text-zinc-400 mb-8">
+            Please check your inbox (and spam folder) for a verification link to access the app.
+          </p>
+          <div className="flex flex-col items-center space-y-4">
+            <button
+              onClick={handleResend}
+              disabled={verificationSending || verificationSent}
+              className="w-full flex justify-center py-2.5 px-4 border border-white/10 rounded-lg shadow-sm text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 transition-colors"
+            >
+              {verificationSent ? 'Verification link sent' : (verificationSending ? 'Sending...' : 'Resend verification email')}
+            </button>
+            <button
+              onClick={logout}
+              className="text-sm text-zinc-500 hover:text-white transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleSendChat = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,9 +187,12 @@ export default function App() {
               <History className="w-5 h-5" />
             </button>
           </div>
-          <div className="absolute top-4 right-0 sm:-right-4">
+          <div className="absolute top-4 right-0 sm:-right-4 flex items-center space-x-2">
             <button onClick={() => setShowSettings(true)} className="p-2 text-zinc-400 hover:text-white hover:bg-white/10 transition-colors bg-zinc-900/50 rounded-full border border-white/5">
               <Settings className="w-5 h-5" />
+            </button>
+            <button onClick={logout} className="p-2 text-zinc-400 hover:text-red-400 hover:bg-white/10 transition-colors bg-zinc-900/50 rounded-full border border-white/5" title="Sign Out">
+              <LogOut className="w-5 h-5" />
             </button>
           </div>
 
