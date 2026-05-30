@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { WebSocketServer, WebSocket } from "ws";
-import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
+import { GoogleGenAI, LiveServerMessage, Modality, Type } from "@google/genai";
 import * as http from "http";
 
 async function startServer() {
@@ -108,10 +108,10 @@ async function startServer() {
               name: "rememberFact",
               description: "Call this tool immediately when the user tells you an important personal fact, preference, or detail about themselves.",
               parameters: {
-                type: "OBJECT",
+                type: Type.OBJECT,
                 properties: {
                   fact: {
-                    type: "STRING",
+                    type: Type.STRING,
                     description: "A concise statement of the personal fact to remember."
                   }
                 },
@@ -134,7 +134,7 @@ async function startServer() {
               }
             });
           } else if (parsed.text) {
-            session.sendRealtimeInput([{ text: parsed.text }]);
+            session.sendRealtimeInput({ text: parsed.text });
           }
         } catch (e) {
           console.error("Error parsing message", e);

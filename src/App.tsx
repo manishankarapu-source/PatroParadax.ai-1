@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useLiveAPI } from './lib/useLiveAPI';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mic, MicOff, AlertCircle, Sparkles, Send, MessageSquare, AudioLines, History, Settings, X, Trash2, LogOut, Mail } from 'lucide-react';
@@ -88,39 +88,42 @@ export default function App() {
     );
   }
 
-  if (!user) {
-    return <AuthScreen />;
-  }
+    // Bypassing authentication entirely for ease of use
+    // if (!user) {
+    //   return <AuthScreen />;
+    // }
 
-  // Enforce email verification (Google logins are automatically verified)
-  if (!user.emailVerified) {
-    return (
-      <div className="min-h-screen bg-zinc-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans selection:bg-zinc-800 text-zinc-50">
-        <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-          <Mail className="mx-auto h-12 w-12 text-zinc-400 mb-4" />
-          <h2 className="text-2xl font-medium tracking-tight text-white mb-2">Verify your email</h2>
-          <p className="text-sm text-zinc-400 mb-8">
-            Please check your inbox (and spam folder) for a verification link to access the app.
-          </p>
-          <div className="flex flex-col items-center space-y-4">
-            <button
-              onClick={handleResend}
-              disabled={verificationSending || verificationSent}
-              className="w-full flex justify-center py-2.5 px-4 border border-white/10 rounded-lg shadow-sm text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 transition-colors"
-            >
-              {verificationSent ? 'Verification link sent' : (verificationSending ? 'Sending...' : 'Resend verification email')}
-            </button>
-            <button
-              onClick={logout}
-              className="text-sm text-zinc-500 hover:text-white transition-colors"
-            >
-              Sign out
-            </button>
+    // Enforce email verification (Google logins are automatically verified)
+    /*
+    if (!user.emailVerified) {
+      return (
+        <div className="min-h-screen bg-zinc-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans selection:bg-zinc-800 text-zinc-50">
+          <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+            <Mail className="mx-auto h-12 w-12 text-zinc-400 mb-4" />
+            <h2 className="text-2xl font-medium tracking-tight text-white mb-2">Verify your email</h2>
+            <p className="text-sm text-zinc-400 mb-8">
+              Please check your inbox (and spam folder) for a verification link to access the app.
+            </p>
+            <div className="flex flex-col items-center space-y-4">
+              <button
+                onClick={handleResend}
+                disabled={verificationSending || verificationSent}
+                className="w-full flex justify-center py-2.5 px-4 border border-white/10 rounded-lg shadow-sm text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 transition-colors"
+              >
+                {verificationSent ? 'Verification link sent' : (verificationSending ? 'Sending...' : 'Resend verification email')}
+              </button>
+              <button
+                onClick={logout}
+                className="text-sm text-zinc-500 hover:text-white transition-colors"
+              >
+                Sign out
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
+    */
 
   const handleSendChat = async (e: React.FormEvent) => {
     e.preventDefault();
