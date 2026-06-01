@@ -135,8 +135,18 @@ export default function App() {
     setChatMessages(newMessages);
     setIsThinking(true);
 
+    const getBackendUrl = (path: string) => {
+      let host = window.location.host;
+      let protocol = window.location.protocol;
+      if (host.includes('vercel.app')) {
+        host = 'ais-pre-ckx5i4qxvstfrchx7duf3n-656976819486.asia-southeast1.run.app';
+        protocol = 'https:';
+      }
+      return `${protocol}//${host}${path}`;
+    };
+
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch(getBackendUrl('/api/chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: newMessages, memory: userMemory })
@@ -145,7 +155,7 @@ export default function App() {
       setChatMessages([...newMessages, { role: 'model', text: data.text || 'Error obtaining response' }]);
 
       // Background Memory Extraction
-      fetch('/api/extract-memory', {
+      fetch(getBackendUrl('/api/extract-memory'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: userMessage, memory: userMemory })

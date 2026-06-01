@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import { WebSocketServer, WebSocket } from "ws";
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from "@google/genai";
@@ -157,6 +158,7 @@ async function startServer() {
     }
   });
 
+  app.use(cors());
   app.use(express.json());
 
   app.post("/api/chat", async (req, res) => {

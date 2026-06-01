@@ -25,8 +25,16 @@ export function useLiveAPI(onMemoryFact?: (fact: string) => void) {
       setError(null);
       setMessages([]);
       // Determine protocol: wss for https, ws for http
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      let wsUrl = `${protocol}//${window.location.host}/live?voice=${encodeURIComponent(voice)}`;
+      let protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      let host = window.location.host;
+      
+      // If deployed on Vercel, route WebSocket traffic to the Google AI Studio published backend
+      if (host.includes('vercel.app')) {
+        host = 'ais-pre-ckx5i4qxvstfrchx7duf3n-656976819486.asia-southeast1.run.app';
+        protocol = 'wss:';
+      }
+
+      let wsUrl = `${protocol}//${host}/live?voice=${encodeURIComponent(voice)}`;
       if (memory && memory.length > 0) {
         wsUrl += `&memory=${encodeURIComponent(memory.join('; '))}`;
       }
