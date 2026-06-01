@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="PatroParadax AI - A real-time voice and intelligent text chat assistant powered by Gemini." />
+    <!-- Progressive Web App Settings -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#09090b" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-touch-fullscreen" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="PatroParadax" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="keywords" content="PatroParadax AI, Patro AI, Voice Assistant, AI Chat, Gemini, Artificial Intelligence" />
     <meta name="google-site-verification" content="gi9GUsoUD6iBs6Y4GioT8iMKQnb8jIzoaia-z2Pgv38" />
     <title>PatroParadax AI</title>
@@ -11,6 +19,15 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(err => {
+            console.log('ServiceWorker registration failed: ', err);
+          });
+        });
+      }
+    </script>
   </body>
 </html>
 

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useLiveAPI } from './lib/useLiveAPI';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mic, MicOff, AlertCircle, Sparkles, Send, MessageSquare, AudioLines, History, Settings, X, Trash2, LogOut, Mail } from 'lucide-react';
+import { Mic, MicOff, AlertCircle, Sparkles, Send, MessageSquare, AudioLines, History, Settings, X, Trash2, LogOut, Mail, Download } from 'lucide-react';
 import { useAuth } from './components/AuthContext';
 import AuthScreen from './components/AuthScreen';
 
@@ -45,6 +45,9 @@ export default function App() {
   const [verificationSending, setVerificationSending] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
 
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallModal, setShowInstallModal] = useState(false);
+
   // Load persistence
   useEffect(() => {
     const savedMem = localStorage.getItem('patro_memory');
@@ -55,7 +58,26 @@ export default function App() {
     if (savedChat) {
       setChatMessages(JSON.parse(savedChat));
     }
+
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
+
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    } else {
+      setShowInstallModal(true);
+    }
+  };
 
   useEffect(() => {
     if (chatMessages.length > 0) {
@@ -201,6 +223,9 @@ export default function App() {
             </button>
           </div>
           <div className="absolute top-4 right-0 sm:-right-4 flex items-center space-x-2">
+            <button onClick={handleInstallClick} className="p-2 text-zinc-400 hover:text-white hover:bg-white/10 transition-colors bg-zinc-900/50 rounded-full border border-white/5" title="Install App">
+              <Download className="w-5 h-5" />
+            </button>
             <button onClick={() => setShowSettings(true)} className="p-2 text-zinc-400 hover:text-white hover:bg-white/10 transition-colors bg-zinc-900/50 rounded-full border border-white/5">
               <Settings className="w-5 h-5" />
             </button>
@@ -405,6 +430,43 @@ export default function App() {
               </motion.div>
             </motion.div>
           )}
+
+          <AnimatePresence>
+            {showInstallModal && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+              >
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 w-full max-w-sm text-center relative shadow-2xl">
+                  <button onClick={() => setShowInstallModal(false)} className="absolute top-4 right-4 text-zinc-400 hover:text-white">
+                    <X className="w-5 h-5" />
+                  </button>
+                  <div className="w-16 h-16 bg-zinc-800 rounded-2xl mx-auto flex items-center justify-center mb-4">
+                     <Download className="w-8 h-8 text-white relative z-10" />
+                  </div>
+                  <h2 className="text-xl font-medium text-white mb-2">Install App</h2>
+                  <p className="text-zinc-400 text-sm mb-6 text-left">
+                    PatroParadax is a modern Web App. To install it directly on your phone:
+                  </p>
+                  <div className="text-left text-sm text-zinc-300 space-y-4">
+                     <div className="bg-zinc-800/50 p-4 rounded-xl border border-white/5">
+                       <strong className="text-white block mb-1">On Android (Chrome)</strong>
+                       Tap the 3-dots menu <span className="font-bold border border-zinc-600 rounded px-1 text-xs">⋮</span> in the top right, then select <strong className="text-white">"Install app"</strong> or <strong className="text-white">"Add to Home screen"</strong>.
+                     </div>
+                     <div className="bg-zinc-800/50 p-4 rounded-xl border border-white/5">
+                       <strong className="text-white block mb-1">On iPhone (Safari)</strong>
+                       Tap the Share icon <span className="font-bold border border-zinc-600 rounded px-1 text-xs">⎙</span> at the bottom, then scroll down and select <strong className="text-white">"Add to Home Screen"</strong>.
+                     </div>
+                  </div>
+                  <button onClick={() => setShowInstallModal(false)} className="mt-8 w-full py-3 bg-white text-black font-medium rounded-xl hover:bg-zinc-200 transition-colors">
+                    Got it
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {showSettings && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-sm">
