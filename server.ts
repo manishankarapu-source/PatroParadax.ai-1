@@ -42,6 +42,7 @@ async function startServer() {
     console.log("Connecting with voiceName:", voiceName);
 
     try {
+      let lastVideoFrame: string | null = null;
       const session = await ai.live.connect({
         model: "gemini-3.1-flash-live-preview",
         callbacks: {
@@ -50,6 +51,33 @@ async function startServer() {
               for (const call of message.toolCall.functionCalls) {
                 if (call.name === "rememberFact" && call.args && call.args.fact) {
                   clientWs.send(JSON.stringify({ memoryFact: call.args.fact }));
+                  try {
+                    if (typeof (session as any).sendToolResponse === 'function') {
+                      (session as any).sendToolResponse({
+                        functionResponses: [{
+                          id: call.id,
+                          name: call.name,
+                          response: { result: "Success" }
+                        }]
+                      });
+                    } else if (typeof (session as any).send === 'function') {
+                      (session as any).send({
+                        toolResponse: {
+                          functionResponses: [{
+                            id: call.id,
+                            name: call.name,
+                            response: { result: "Success" }
+                          }]
+                        }
+                      });
+                    }
+                  } catch (err) {
+                    console.error("Error sending tool response:", err);
+                  }
+                } else if (call.name === "rememberVisual" && call.args && call.args.label) {
+                  if (lastVideoFrame) {
+                    clientWs.send(JSON.stringify({ memoryVisual: { label: call.args.label, image: lastVideoFrame } }));
+                  }
                   try {
                     if (typeof (session as any).sendToolResponse === 'function') {
                       (session as any).sendToolResponse({
@@ -118,15 +146,34 @@ async function startServer() {
                 },
                 required: ["fact"]
               }
+            }, {
+              name: "rememberVisual",
+              description: "Call this tool to save a photo of what you currently see, along with a label (e.g., 'Manish, the user', 'My Blue Mug'). Use this when the user asks you to remember them or an object visually so you can recognize them in the future.",
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  label: {
+                    type: Type.STRING,
+                    description: "A short, descriptive label for the photo."
+                  }
+                },
+                required: ["label"]
+              }
             }]
           }],
-          systemInstruction: "You are PatroParadax (Patro), a helpful, conversational AI. Keep your responses concise and natural. Use the rememberFact tool to save important facts the user tells you." + memoryContext,
+          systemInstruction: "You are PatroParadax (Patro), a helpful, conversational AI. If the user shares their camera, you will have continuous access to their video feed and can see them and their surroundings in real-time. If the user introduces themselves or someone else by name, you MUST use the rememberVisual tool to save their name along with a snapshot to recognize them later. If the user asks you to remember an object, use rememberVisual to save a snapshot. Always use the saved visual facts to identify people and things you see. Keep your responses concise and natural." + memoryContext,
         },
       });
 
       clientWs.on("message", (data) => {
         try {
           const parsed = JSON.parse(data.toString());
+          if (parsed.initVisualMemories) {
+            for (const mem of parsed.initVisualMemories) {
+              session.sendRealtimeInput({ text: `Reference snapshot for: ${mem.label}` });
+              session.sendRealtimeInput({ video: { data: mem.image, mimeType: "image/jpeg" } });
+            }
+          }
           if (parsed.audio) {
             session.sendRealtimeInput({
               audio: {
@@ -134,7 +181,17 @@ async function startServer() {
                 mimeType: "audio/pcm;rate=16000"
               }
             });
-          } else if (parsed.text) {
+          }
+          if (parsed.video) {
+            lastVideoFrame = parsed.video;
+            session.sendRealtimeInput({
+              video: {
+                data: parsed.video,
+                mimeType: "image/jpeg"
+              }
+            });
+          }
+          if (parsed.text) {
             session.sendRealtimeInput({ text: parsed.text });
           }
         } catch (e) {

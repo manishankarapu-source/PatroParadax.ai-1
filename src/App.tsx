@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useLiveAPI } from './lib/useLiveAPI';
+import { Visualizer } from './components/Visualizer';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mic, MicOff, AlertCircle, Sparkles, Send, MessageSquare, AudioLines, History, Settings, X, Trash2, LogOut, Mail, Download } from 'lucide-react';
+import { Mic, MicOff, AlertCircle, Sparkles, Send, MessageSquare, AudioLines, History, Settings, X, Trash2, LogOut, Mail, Download, Video, VideoOff, Loader2, Search, SwitchCamera } from 'lucide-react';
 import { useAuth } from './components/AuthContext';
 import AuthScreen from './components/AuthScreen';
 
@@ -19,7 +20,9 @@ export default function App() {
   const [activeMode, setActiveMode] = useState<'voice' | 'chat'>('voice');
 
   const [userMemory, setUserMemory] = useState<string[]>([]);
+  const [userVisualMemory, setUserVisualMemory] = useState<{label: string, image: string}[]>([]);
   const [showSettings, setShowSettings] = useState(false);
+  const [memorySearchTerm, setMemorySearchTerm] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   
   // Voice State
@@ -34,11 +37,83 @@ export default function App() {
       return prev;
     });
   };
-  const { isConnected, start, stop, error } = useLiveAPI(handleMemoryFact);
+
+  const handleMemoryVisual = (label: string, image: string) => {
+    setUserVisualMemory(prev => {
+      const existingIdx = prev.findIndex(m => m.label === label);
+      let updated;
+      if (existingIdx >= 0) {
+        updated = [...prev];
+        updated[existingIdx] = { label, image };
+      } else {
+        updated = [...prev, { label, image }];
+      }
+      try {
+        localStorage.setItem('patro_visual_memory', JSON.stringify(updated));
+      } catch (err) {
+        console.error("Visual memory save error (quota exceeded?):", err);
+        // Do not crash the app, but maybe we can't save it
+      }
+      return updated;
+    });
+  };
+
+  const { isConnected, start, stop, error, analyser, mediaStream, cameraEnabled, flipCamera, facingMode } = useLiveAPI(handleMemoryFact, handleMemoryVisual);
+  const [enableVideo, setEnableVideo] = useState(false);
+  const [localVideoPreview, setLocalVideoPreview] = useState<MediaStream | null>(null);
+  const [localFacingMode, setLocalFacingMode] = useState<'user' | 'environment'>('user');
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [isCameraInitializing, setIsCameraInitializing] = useState(false);
+
+  const toggleVideoPreview = async () => {
+    setCameraError(null);
+    if (enableVideo) {
+      if (localVideoPreview) {
+        localVideoPreview.getTracks().forEach(t => t.stop());
+        setLocalVideoPreview(null);
+      }
+      setEnableVideo(false);
+    } else {
+      setIsCameraInitializing(true);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: localFacingMode } });
+        setLocalVideoPreview(stream);
+        setEnableVideo(true);
+      } catch (err: any) {
+        console.error("Camera access denied", err);
+        setCameraError(err.message || "Camera permission denied.");
+      } finally {
+        setIsCameraInitializing(false);
+      }
+    }
+  };
+
+  const handleFlipCamera = async () => {
+    if (isConnected) {
+      flipCamera();
+    } else if (enableVideo) {
+      setIsCameraInitializing(true);
+      try {
+        const newFacingMode = localFacingMode === 'user' ? 'environment' : 'user';
+        setLocalFacingMode(newFacingMode);
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: newFacingMode } });
+        if (localVideoPreview) {
+          localVideoPreview.getTracks().forEach(t => t.stop());
+        }
+        setLocalVideoPreview(stream);
+      } catch (err: any) {
+        console.error("Camera flip failed", err);
+      } finally {
+        setIsCameraInitializing(false);
+      }
+    } else {
+      setLocalFacingMode(localFacingMode === 'user' ? 'environment' : 'user');
+    }
+  };
 
   // Chat State
   const [textInput, setTextInput] = useState('');
-  const [chatMessages, setChatMessages] = useState<{role: 'user'|'model', text: string}[]>([]);
+  const [chatMessages, setChatMessages] = useState<{id: string, role: 'user'|'model', text: string}[]>([]);
   const [isThinking, setIsThinking] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -54,9 +129,23 @@ export default function App() {
     if (savedMem) {
       setUserMemory(JSON.parse(savedMem));
     }
+    const savedVisualMem = localStorage.getItem('patro_visual_memory');
+    if (savedVisualMem) {
+      try {
+        const parsed = JSON.parse(savedVisualMem);
+        if (Array.isArray(parsed)) setUserVisualMemory(parsed);
+      } catch (e) {
+        console.error(e);
+      }
+    }
     const savedChat = localStorage.getItem('patro_chat');
     if (savedChat) {
-      setChatMessages(JSON.parse(savedChat));
+      const parsedChat = JSON.parse(savedChat);
+      const chatWithIds = parsedChat.map((msg: any, idx: number) => ({
+        ...msg,
+        id: msg.id || `historical-${idx}-${Date.now()}`
+      }));
+      setChatMessages(chatWithIds);
     }
 
     const handler = (e: Event) => {
@@ -110,10 +199,9 @@ export default function App() {
     );
   }
 
-    // Bypassing authentication entirely for ease of use
-    // if (!user) {
-    //   return <AuthScreen />;
-    // }
+    if (!user) {
+      return <AuthScreen />;
+    }
 
     // Enforce email verification (Google logins are automatically verified)
     /*
@@ -153,7 +241,8 @@ export default function App() {
 
     const userMessage = textInput.trim();
     setTextInput('');
-    const newMessages = [...chatMessages, { role: 'user' as const, text: userMessage }];
+    const userMsgId = `user-${Date.now()}`;
+    const newMessages = [...chatMessages, { id: userMsgId, role: 'user' as const, text: userMessage }];
     setChatMessages(newMessages);
     setIsThinking(true);
 
@@ -174,7 +263,8 @@ export default function App() {
         body: JSON.stringify({ messages: newMessages, memory: userMemory })
       });
       const data = await response.json();
-      setChatMessages([...newMessages, { role: 'model', text: data.text || 'Error obtaining response' }]);
+      const modelMsgId = `model-${Date.now()}`;
+      setChatMessages([...newMessages, { id: modelMsgId, role: 'model', text: data.text || 'Error obtaining response' }]);
 
       // Background Memory Extraction
       fetch(getBackendUrl('/api/extract-memory'), {
@@ -191,7 +281,8 @@ export default function App() {
 
     } catch (err) {
       console.error(err);
-      setChatMessages([...newMessages, { role: 'model', text: 'Error: Failed to connect to server.' }]);
+      const errorMsgId = `error-${Date.now()}`;
+      setChatMessages([...newMessages, { id: errorMsgId, role: 'model', text: 'Error: Failed to connect to server.' }]);
     } finally {
       setIsThinking(false);
     }
@@ -207,6 +298,14 @@ export default function App() {
     const updated = userMemory.filter((_, i) => i !== index);
     setUserMemory(updated);
     localStorage.setItem('patro_memory', JSON.stringify(updated));
+  };
+
+  const removeVisualMemory = (index: number) => {
+    const updated = userVisualMemory.filter((_, i) => i !== index);
+    setUserVisualMemory(updated);
+    try {
+      localStorage.setItem('patro_visual_memory', JSON.stringify(updated));
+    } catch (e) {}
   };
 
 
@@ -290,43 +389,131 @@ export default function App() {
               </div>
             </div>
 
-            <div className="relative flex justify-center items-center w-full mb-12 min-h-[240px]">
-              {isConnected && (
-                <motion.div
-                  className="absolute w-48 h-48 bg-white/5 rounded-full"
-                  animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
-                  transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                />
+            <AnimatePresence>
+              {enableVideo && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                  animate={{ opacity: 1, height: 'auto', marginBottom: 32 }}
+                  exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                  className="flex flex-col items-center justify-center overflow-hidden"
+                >
+                  <div className="relative w-48 h-48 sm:w-64 sm:h-64 rounded-3xl overflow-hidden border border-white/10 bg-zinc-900/50 flex flex-col items-center justify-center shadow-2xl">
+                    <AnimatePresence>
+                      {isCameraInitializing && (
+                        <motion.div 
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-zinc-900/90 backdrop-blur-sm"
+                        >
+                           <Loader2 className="w-6 h-6 mb-2 text-white animate-spin" />
+                           <span className="text-[10px] uppercase tracking-wider font-mono text-zinc-400 mt-1">Starting</span>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                    {((mediaStream && cameraEnabled) || localVideoPreview) ? (
+                      <video
+                        autoPlay
+                        playsInline
+                        muted
+                        className="absolute inset-0 w-full h-full object-cover"
+                        ref={(el) => {
+                          const streamToPlay = (mediaStream && cameraEnabled) ? mediaStream : localVideoPreview;
+                          if (el && streamToPlay && el.srcObject !== streamToPlay) {
+                            el.srcObject = streamToPlay;
+                          }
+                        }}
+                      />
+                    ) : null}
+                  </div>
+                </motion.div>
               )}
-              {isConnected && (
-                <motion.div
-                  className="absolute w-48 h-48 bg-white/10 rounded-full"
-                  animate={{ scale: [1, 1.3, 1], opacity: [0.8, 0, 0.8] }}
-                  transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut", delay: 0.2 }}
-                />
-              )}
-              
-              <button
-                onClick={() => isConnected ? stop() : start(selectedVoice, userMemory)}
-                className={`relative z-10 flex items-center justify-center w-28 h-28 rounded-full transition-all duration-300 backdrop-blur-sm
-                  ${isConnected 
-                    ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/30 shadow-[0_0_40px_rgba(239,68,68,0.2)]' 
-                    : 'bg-white/5 text-white hover:bg-white/10 border border-white/10 hover:border-white/30 hover:shadow-[0_0_30px_rgba(255,255,255,0.1)]'
-                  }`}
-              >
-                {isConnected ? (
-                  <MicOff className="w-10 h-10" strokeWidth={1.5} />
-                ) : (
-                  <Mic className="w-10 h-10" strokeWidth={1.5} />
+            </AnimatePresence>
+
+            <div className="relative flex flex-col justify-center items-center w-full mb-8 min-h-[160px]">
+              <div className="relative mb-6 flex items-center justify-center">
+                {isConnected && (
+                  <motion.div
+                    className="absolute w-40 h-40 bg-white/5 rounded-full pointer-events-none"
+                    animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0, 0.5] }}
+                    transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                  />
                 )}
-              </button>
+                {isConnected && (
+                  <motion.div
+                    className="absolute w-40 h-40 bg-white/10 rounded-full pointer-events-none"
+                    animate={{ scale: [1, 1.2, 1], opacity: [0.8, 0, 0.8] }}
+                    transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut", delay: 0.2 }}
+                  />
+                )}
+                <div className="relative w-28 h-28 flex items-center justify-center rounded-full transition-all duration-300 z-10">
+                  <button
+                    onClick={() => {
+                      if (isCameraInitializing) return;
+                      if (isConnected) {
+                        stop();
+                      } else {
+                        start(selectedVoice, userMemory, enableVideo, userVisualMemory);
+                        setLocalVideoPreview(null); // Clear preview, useLiveAPI manages it now
+                      }
+                    }}
+                    disabled={isCameraInitializing}
+                    className={`relative z-10 flex items-center justify-center w-full h-full rounded-full transition-all duration-300 border border-white/10
+                      ${isConnected 
+                        ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20 shadow-[0_0_40px_rgba(239,68,68,0.2)] border-red-500/30 hover:border-red-500/50' 
+                        : isCameraInitializing
+                        ? 'bg-zinc-800/50 text-white/50 cursor-not-allowed'
+                        : 'bg-zinc-800/80 text-white hover:bg-zinc-700/80 hover:shadow-[0_0_30px_rgba(255,255,255,0.1)]'
+                      }`}
+                  >
+                    {isConnected ? (
+                      <MicOff className="w-10 h-10" strokeWidth={1.5} />
+                    ) : (
+                      <Mic className="w-10 h-10" strokeWidth={1.5} />
+                    )}
+                  </button>
+                </div>
+                
+                <div className="absolute -right-20 top-1/2 -translate-y-1/2 flex flex-col gap-2">
+                  <button
+                    onClick={toggleVideoPreview}
+                    disabled={isConnected || isCameraInitializing}
+                    className={`p-3 rounded-full transition-colors ${enableVideo ? 'bg-zinc-200 text-black' : 'bg-zinc-900 text-zinc-400 border border-white/5 hover:bg-white/5'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                    title={enableVideo ? "Disable Camera" : "Enable Camera"}
+                  >
+                    {enableVideo ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+                  </button>
+                  {((enableVideo && !isConnected) || (cameraEnabled && isConnected)) && (
+                    <button
+                      onClick={handleFlipCamera}
+                      disabled={isCameraInitializing}
+                      className="p-3 rounded-full bg-zinc-900 text-zinc-400 border border-white/5 hover:text-white hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Flip Camera"
+                    >
+                      <SwitchCamera className="w-5 h-5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="h-16 w-64 flex items-center justify-center pointer-events-none">
+                 {isConnected && <Visualizer analyser={analyser} />}
+              </div>
             </div>
 
             <motion.div
               animate={{ opacity: 1 }}
-              className="h-10 flex items-center justify-center"
+              className="h-14 flex items-center justify-center"
             >
-              {error ? (
+              {cameraError ? (
+                <div className="flex flex-col items-center justify-center text-red-400 text-sm bg-red-500/10 px-4 py-2 mx-auto rounded-full border border-red-500/20 max-w-[90%]">
+                  <div className="flex items-center">
+                    <AlertCircle className="w-4 h-4 mr-2" />
+                    <span>{cameraError}</span>
+                  </div>
+                  <span className="text-xs mt-1 text-red-400/80">Please reload the page & allow camera.</span>
+                </div>
+              ) : error ? (
                 <div className="flex items-center text-red-400 text-sm bg-red-500/10 px-4 py-2 rounded-full border border-red-500/20">
                   <AlertCircle className="w-4 h-4 mr-2" />
                   <span>{error}</span>
@@ -350,11 +537,11 @@ export default function App() {
                 </div>
               ) : (
                 <AnimatePresence initial={false}>
-                  {chatMessages.map((msg, i) => {
+                  {chatMessages.map((msg) => {
                     const isSrv = msg.role === 'model';
                     return (
                       <motion.div
-                        key={i}
+                        key={msg.id}
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         className={`flex flex-col ${isSrv ? 'items-start' : 'items-end'}`}
@@ -369,6 +556,7 @@ export default function App() {
                   })}
                   {isThinking && (
                     <motion.div
+                      key="thinking-indicator"
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       className="flex flex-col items-start"
@@ -430,6 +618,7 @@ export default function App() {
               </motion.div>
             </motion.div>
           )}
+        </AnimatePresence>
 
           <AnimatePresence>
             {showInstallModal && (
@@ -468,43 +657,83 @@ export default function App() {
             )}
           </AnimatePresence>
 
-          {showSettings && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-sm">
-              <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-zinc-900 border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl relative">
-                <button onClick={() => setShowSettings(false)} className="absolute top-4 right-4 text-zinc-400 hover:text-white">
-                  <X className="w-5 h-5" />
-                </button>
-                <h2 className="text-xl font-medium text-white mb-2">Memory Settings</h2>
-                <p className="text-zinc-400 text-sm mb-6">
-                  Patro learns about you over time across chats. Here is what I remember:
-                </p>
-                
-                <div className="space-y-3 mb-6 max-h-[40vh] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-zinc-700">
-                  {userMemory.length === 0 ? (
-                    <div className="text-zinc-500 text-sm italic py-4 text-center border border-dashed border-white/10 rounded-xl">
-                      No memories yet. Start chatting to teach me!
-                    </div>
-                  ) : (
-                    userMemory.map((mem, i) => (
-                      <div key={i} className="flex items-start justify-between bg-zinc-950 p-3 rounded-xl border border-white/5 group">
-                        <span className="text-zinc-300 text-sm leading-relaxed pr-3">{mem}</span>
-                        <button onClick={() => removeMemory(i)} className="text-zinc-500 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 p-1">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                <div className="flex justify-end">
-                  <button onClick={() => setShowSettings(false)} className="px-5 py-2 text-sm font-medium bg-white text-zinc-900 hover:bg-zinc-200 rounded-lg transition-colors">
-                    Done
+          <AnimatePresence>
+            {showSettings && (() => {
+              const filteredMemory = userMemory.filter(m => m.toLowerCase().includes(memorySearchTerm.toLowerCase()));
+              const filteredVisualMemory = userVisualMemory.filter(m => m.label.toLowerCase().includes(memorySearchTerm.toLowerCase()));
+              
+              return (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-sm">
+                <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-zinc-900 border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl relative flex flex-col max-h-[90vh]">
+                  <button onClick={() => setShowSettings(false)} className="absolute top-4 right-4 text-zinc-400 hover:text-white">
+                    <X className="w-5 h-5" />
                   </button>
-                </div>
+                  <h2 className="text-xl font-medium text-white mb-2 shrink-0">Memory Settings</h2>
+                  <p className="text-zinc-400 text-sm mb-4 shrink-0">
+                    Patro learns about you over time across chats. Here is what I remember:
+                  </p>
+
+                  <div className="relative mb-4 shrink-0">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Search className="h-4 w-4 text-zinc-500" />
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Search memories..."
+                      value={memorySearchTerm}
+                      onChange={(e) => setMemorySearchTerm(e.target.value)}
+                      className="bg-zinc-950 block w-full pl-9 pr-3 py-2 border border-white/10 rounded-lg text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 transition-colors"
+                    />
+                  </div>
+                  
+                  <div className="space-y-3 mb-6 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-zinc-700 grow">
+                    {filteredMemory.length === 0 && filteredVisualMemory.length === 0 ? (
+                      <div className="text-zinc-500 text-sm italic py-4 text-center border border-dashed border-white/10 rounded-xl">
+                        {memorySearchTerm ? "No matching memories found." : "No memories yet. Start chatting to teach me!"}
+                      </div>
+                    ) : (
+                      <>
+                        {filteredMemory.map((mem, i) => {
+                          const originalIndex = userMemory.indexOf(mem);
+                          return (
+                            <div key={`mem-${originalIndex}`} className="flex items-start justify-between bg-zinc-950 p-3 rounded-xl border border-white/5">
+                              <span className="text-zinc-300 text-sm leading-relaxed pr-3">{mem}</span>
+                              <button onClick={() => removeMemory(originalIndex)} className="text-zinc-500 hover:text-red-400 bg-zinc-900 hover:bg-zinc-800 rounded-lg transition-colors p-2 flex-shrink-0">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                        {filteredVisualMemory.map((mem, i) => {
+                          const originalIndex = userVisualMemory.indexOf(mem);
+                          return (
+                            <div key={`vis-${originalIndex}`} className="flex items-center justify-between bg-zinc-950 p-3 rounded-xl border border-white/5">
+                              <div className="flex items-center gap-3 overflow-hidden">
+                                <div className="w-12 h-12 rounded-lg overflow-hidden bg-zinc-900 border border-white/10 flex-shrink-0">
+                                  <img src={`data:image/jpeg;base64,${mem.image}`} alt={mem.label} className="w-full h-full object-cover" />
+                                </div>
+                                <span className="text-zinc-300 text-sm leading-relaxed truncate">{mem.label}</span>
+                              </div>
+                              <button onClick={() => removeVisualMemory(originalIndex)} className="text-zinc-500 hover:text-red-400 bg-zinc-900 hover:bg-zinc-800 rounded-lg transition-colors p-2 flex-shrink-0 ml-3">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end shrink-0">
+                    <button onClick={() => setShowSettings(false)} className="px-5 py-2 text-sm font-medium bg-white text-zinc-900 hover:bg-zinc-200 rounded-lg transition-colors">
+                      Done
+                    </button>
+                  </div>
+                </motion.div>
               </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            )
+            })()}
+          </AnimatePresence>
 
       </div>
     </div>

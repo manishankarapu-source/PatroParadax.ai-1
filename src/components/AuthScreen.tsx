@@ -4,14 +4,17 @@ import {
   GoogleAuthProvider, 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
-  sendEmailVerification
+  sendEmailVerification,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mail, Lock, AlertCircle, Sparkles } from 'lucide-react';
+import { useAuth } from './AuthContext';
 
 export default function AuthScreen() {
   const [isLogin, setIsLogin] = useState(true);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -23,11 +26,33 @@ export default function AuthScreen() {
       setLoading(true);
       setError('');
       const provider = new GoogleAuthProvider();
-      // Using popup per Firebase integrations instructions for the preview environment
       await signInWithPopup(auth, provider);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Failed to sign in with Google');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) {
+      setError("Please enter your email to reset password.");
+      return;
+    }
+    
+    setLoading(true);
+    setError('');
+    setMessage('');
+    
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setMessage("Password reset email sent! Check your inbox.");
+      setIsForgotPassword(false);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Failed to send reset email');
     } finally {
       setLoading(false);
     }
@@ -49,9 +74,8 @@ export default function AuthScreen() {
         await signInWithEmailAndPassword(auth, email, password);
       } else {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        // Send email verification link
         await sendEmailVerification(userCredential.user);
-        setMessage("Account created! We've sent a verification email. Please check your inbox (and spam folder) to verify your account.");
+        setMessage("Account created! We've sent a verification email. Please check your inbox.");
       }
     } catch (err: any) {
       console.error(err);
@@ -60,6 +84,49 @@ export default function AuthScreen() {
       setLoading(false);
     }
   };
+
+  if (isForgotPassword) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans selection:bg-zinc-800 text-zinc-50">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+            <Sparkles className="mx-auto h-12 w-12 text-zinc-400" />
+            <h2 className="mt-6 text-center text-3xl font-medium tracking-tight text-white">Reset Password</h2>
+          </motion.div>
+        </div>
+
+        <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="bg-zinc-900 py-8 px-4 shadow-2xl border border-white/5 sm:rounded-2xl sm:px-10 relative overflow-hidden">
+            <AnimatePresence>
+              {error && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="mb-4 bg-red-500/10 border border-red-500/20 rounded-lg p-3 flex text-sm text-red-500">
+                  <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
+                  <p>{error}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <form className="space-y-6" onSubmit={handleForgotPassword}>
+              <div>
+                <label className="block text-sm font-medium text-zinc-300">Email address</label>
+                <div className="mt-1 relative rounded-md shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Mail className="h-5 w-5 text-zinc-500" />
+                  </div>
+                  <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="bg-zinc-950 block w-full pl-10 pr-3 py-2.5 border border-white/10 rounded-lg text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 transition-colors" placeholder="you@example.com" />
+                </div>
+              </div>
+              <button type="submit" disabled={loading} className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-zinc-900 bg-white hover:bg-zinc-200 focus:outline-none disabled:opacity-50 transition-colors">
+                {loading ? 'Sending...' : 'Send Reset Link'}
+              </button>
+            </form>
+          </div>
+          <p className="mt-4 text-center text-sm text-zinc-400">
+            Remembered your password? <button onClick={() => { setIsForgotPassword(false); setError(''); }} className="font-medium text-white hover:text-zinc-200 underline decoration-white/30 underline-offset-4">Sign in</button>
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans selection:bg-zinc-800 text-zinc-50">
@@ -129,9 +196,16 @@ export default function AuthScreen() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-zinc-300">
-                Password
-              </label>
+              <div className="flex justify-between items-center">
+                <label className="block text-sm font-medium text-zinc-300">
+                  Password
+                </label>
+                {isLogin && (
+                  <button type="button" onClick={() => setIsForgotPassword(true)} className="text-xs text-zinc-400 hover:text-white underline decoration-white/30 underline-offset-2">
+                    Forgot password?
+                  </button>
+                )}
+              </div>
               <div className="mt-1 relative rounded-md shadow-sm">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <Lock className="h-5 w-5 text-zinc-500" />
@@ -183,10 +257,6 @@ export default function AuthScreen() {
                 Google
               </button>
             </div>
-          </div>
-          
-          <div className="mt-8 text-center bg-yellow-500/10 border border-yellow-500/20 p-3 rounded-lg text-xs leading-relaxed text-yellow-500/80 mb-4">
-              <strong>Notice:</strong> To use Email/Password creation, please ensure the <strong>"Email/Password"</strong> sign-in provider is enabled in your Firebase Console &gt; Authentication &gt; Sign-in method.
           </div>
 
         </div>
